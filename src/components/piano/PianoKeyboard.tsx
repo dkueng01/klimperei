@@ -3,10 +3,11 @@ import { KEY_DEFS, KEYMAP, getLeftPosition, TOTAL_WHITE_KEYS } from "@/lib/piano
 
 interface PianoKeyboardProps {
   activeNotes: Set<string>;
-  onPlayNote: (note: string) => void;
+  onPlayNoteStart: (note: string) => void;
+  onPlayNoteStop: (note: string) => void;
 }
 
-export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
+export function PianoKeyboard({ activeNotes, onPlayNoteStart, onPlayNoteStop }: PianoKeyboardProps) {
   return (
     <div className="relative w-full h-48 bg-gray-100 rounded-b-xl shadow-2xl overflow-hidden border-x-4 border-b-4 border-gray-300">
       {KEY_DEFS.map((k) => {
@@ -18,13 +19,13 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
           .find((key) => KEYMAP[key] === k.note)
           ?.toUpperCase();
 
-        const noteLabel = k.note.replace(/[0-9]/g, "");
-
         if (k.type === "white") {
           return (
             <div
               key={k.note}
-              onMouseDown={() => onPlayNote(k.note)}
+              onMouseDown={() => onPlayNoteStart(k.note)}
+              onMouseUp={() => onPlayNoteStop(k.note)}
+              onMouseLeave={() => onPlayNoteStop(k.note)}
               className={cn(
                 "absolute top-0 bottom-0 border-r border-gray-300 bg-white cursor-pointer active:bg-gray-100 rounded-b-md flex flex-col justify-end items-center pb-2 transition-transform select-none group",
                 isActive && "bg-yellow-100 scale-y-[0.98] origin-top"
@@ -43,7 +44,9 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
           return (
             <div
               key={k.note}
-              onMouseDown={() => onPlayNote(k.note)}
+              onMouseDown={() => onPlayNoteStart(k.note)}
+              onMouseUp={() => onPlayNoteStop(k.note)}
+              onMouseLeave={() => onPlayNoteStop(k.note)}
               className={cn(
                 "absolute top-0 h-32 bg-black z-10 cursor-pointer rounded-b-md border-x border-b border-gray-700 shadow-lg active:scale-y-[0.95] origin-top flex flex-col justify-end items-center pb-2 select-none",
                 isActive && "bg-gray-800"

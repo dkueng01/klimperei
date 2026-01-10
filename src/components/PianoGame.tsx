@@ -87,22 +87,26 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     }
   }, [isPlaying, currentSong, hitNotes]);
 
-  const playNote = useCallback((note: string) => {
+  const startNote = useCallback((note: string) => {
     if (samplerRef.current && isLoaded) {
-      samplerRef.current.triggerAttackRelease(note, "8n");
+      samplerRef.current.triggerAttack(note);
     }
 
     setActiveNotes((prev) => new Set(prev).add(note));
-    setTimeout(() => {
-      setActiveNotes((prev) => {
-        const next = new Set(prev);
-        next.delete(note);
-        return next;
-      });
-    }, 200);
-
     checkHit(note);
   }, [isLoaded, checkHit]);
+
+  const stopNote = useCallback((note: string) => {
+    if (samplerRef.current && isLoaded) {
+      samplerRef.current.triggerRelease(note);
+    }
+
+    setActiveNotes((prev) => {
+      const next = new Set(prev);
+      next.delete(note);
+      return next;
+    });
+  }, [isLoaded]);
 
   const updateLoop = useCallback(() => {
     if (Tone.Transport.state === "started") {
@@ -175,11 +179,7 @@ export function PianoGame({ initialSong }: PianoGameProps) {
   };
 
   const togglePlayPause = async () => {
-    if (gameFinished) {
-      startSequence();
-      return;
-    }
-
+    if (gameFinished) { startSequence(); return; }
     if (countDown !== null) return;
 
     if (isPlaying) {
@@ -198,40 +198,36 @@ export function PianoGame({ initialSong }: PianoGameProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-      }
-
+      if (e.code === "Space") e.preventDefault();
       if (e.repeat) return;
 
       switch (e.code) {
-        case "Space":
-          togglePlayPause();
-          return;
-        case "KeyR":
-          resetGame();
-          return;
-        case "KeyM":
-          setMetronomeMuted((prev) => !prev);
-          return;
+        case "Space": togglePlayPause(); return;
+        case "KeyR": resetGame(); return;
+        case "KeyM": setMetronomeMuted((prev) => !prev); return;
       }
 
       const note = KEYMAP[e.key.toLowerCase()];
-      if (note) {
-        playNote(note);
-      }
+      if (note) startNote(note);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const note = KEYMAP[e.key.toLowerCase()];
+      if (note) stopNote(note);
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isPlaying, gameFinished, countDown, isLoaded, playNote]);
-
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isPlaying, gameFinished, countDown, isLoaded, startNote, stopNote]);
 
   if (!isLoaded) return <div className="flex gap-2 text-gray-500 mt-10"><Loader2 className="animate-spin" /> Lade Piano...</div>;
 
   return (
     <div className="flex flex-col items-center w-full max-w-4xl gap-6 select-none relative">
-
       {gameFinished && <EndScreen score={score} onRestart={startSequence} />}
       <CountDownOverlay count={countDown} />
 
@@ -259,7 +255,8 @@ export function PianoGame({ initialSong }: PianoGameProps) {
 
         <PianoKeyboard
           activeNotes={activeNotes}
-          onPlayNote={playNote}
+          onPlayNoteStart={startNote}
+          onPlayNoteStop={stopNote}
         />
       </div>
     </div>
