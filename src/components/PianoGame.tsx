@@ -16,7 +16,6 @@ interface PianoGameProps {
 }
 
 export function PianoGame({ initialSong }: PianoGameProps) {
-  // --- STATE ---
   const [activeNotes, setActiveNotes] = useState<Set<string>>(new Set());
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -25,20 +24,19 @@ export function PianoGame({ initialSong }: PianoGameProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [metronomeMuted, setMetronomeMuted] = useState(false);
 
-  // Score State
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [hitNotes, setHitNotes] = useState<Set<number>>(new Set());
   const [lastHitFeedback, setLastHitFeedback] = useState<{ msg: string; color: string } | null>(null);
   const [gameFinished, setGameFinished] = useState(false);
 
-  // Refs
   const samplerRef = useRef<Tone.Sampler | null>(null);
   const metronomeRef = useRef<Tone.MembraneSynth | null>(null);
   const animationFrameRef = useRef<number>(0);
   const lastMetronomeBeat = useRef<number>(-1);
 
-  // --- AUDIO SETUP ---
+  const activeHoldsRef = useRef<Map<string, { noteIndex: number; startTime: number }>>(new Map());
+
   useEffect(() => {
     const sampler = new Tone.Sampler({
       urls: { C4: "C4.mp3", A4: "A4.mp3", C5: "C5.mp3" },
@@ -55,9 +53,21 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     return () => { sampler.dispose(); metroSynth.dispose(); };
   }, []);
 
-  // --- GAME LOGIC ---
+  const getDurationSeconds = useCallback((duration: string, bpm: number) => {
+    const secondsPerBeat = 60 / bpm;
+    if (duration.includes("n")) {
+      let beats = 1;
+      if (duration === "1n") beats = 4;
+      else if (duration === "2n") beats = 2;
+      else if (duration === "4n") beats = 1;
+      else if (duration === "8n") beats = 0.5;
+      return beats * secondsPerBeat;
+    }
+    return parseFloat(duration);
+  }, []);
+
   const checkHit = useCallback((notePlayed: string) => {
-    if (!isPlaying) return;
+    if (!isPlaying) return null;
 
     const now = Tone.Transport.seconds;
     const secondsPerBeat = 60 / currentSong.bpm;
@@ -70,12 +80,11 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     });
 
     if (noteIndex !== -1) {
-      // Treffer
       const noteDef = currentSong.notes[noteIndex];
       const diff = Math.abs((noteDef.time * secondsPerBeat) - now);
 
       let points = 20;
-      let msg = "Okay";
+      let msg = "Start OK";
       let col = "text-blue-400";
 
       if (diff < 0.1) { points = 100; msg = "PERFEKT!"; col = "text-yellow-400"; }
@@ -86,22 +95,31 @@ export function PianoGame({ initialSong }: PianoGameProps) {
       setHitNotes((prev) => new Set(prev).add(noteIndex));
       setLastHitFeedback({ msg, color: col });
       setTimeout(() => setLastHitFeedback(null), 800);
+
+      return noteIndex;
     } else {
-      // Miss
       setCombo(0);
       setLastHitFeedback({ msg: "Miss", color: "text-red-500" });
       setTimeout(() => setLastHitFeedback(null), 500);
+      return null;
     }
   }, [isPlaying, currentSong, hitNotes]);
 
-  // --- AUDIO CONTROL ---
   const startNote = useCallback((note: string) => {
     if (samplerRef.current && isLoaded) {
       samplerRef.current.triggerAttack(note);
     }
     setActiveNotes((prev) => new Set(prev).add(note));
-    checkHit(note);
-  }, [isLoaded, checkHit]);
+
+    const hitIndex = checkHit(note);
+
+    if (hitIndex !== null && isPlaying) {
+      activeHoldsRef.current.set(note, {
+        noteIndex: hitIndex,
+        startTime: Tone.Transport.seconds
+      });
+    }
+  }, [isLoaded, checkHit, isPlaying]);
 
   const stopNote = useCallback((note: string) => {
     if (samplerRef.current && isLoaded) {
@@ -112,15 +130,36 @@ export function PianoGame({ initialSong }: PianoGameProps) {
       next.delete(note);
       return next;
     });
-  }, [isLoaded]);
 
-  // --- GAME LOOP ---
+    const holdInfo = activeHoldsRef.current.get(note);
+    if (holdInfo && isPlaying) {
+      const releaseTime = Tone.Transport.seconds;
+      const heldDuration = releaseTime - holdInfo.startTime;
+
+      const targetNote = currentSong.notes[holdInfo.noteIndex];
+      const targetDuration = getDurationSeconds(targetNote.duration, currentSong.bpm);
+
+      const ratio = heldDuration / targetDuration;
+
+      if (targetDuration > 0.4) {
+        if (ratio >= 0.8) {
+          setScore(s => s + 50);
+          setLastHitFeedback({ msg: "Sustain Bonus!", color: "text-purple-400" });
+          setTimeout(() => setLastHitFeedback(null), 800);
+        } else if (ratio < 0.5) {
+          setLastHitFeedback({ msg: "Zu kurz!", color: "text-orange-400" });
+          setTimeout(() => setLastHitFeedback(null), 500);
+        }
+      }
+      activeHoldsRef.current.delete(note);
+    }
+
+  }, [isLoaded, isPlaying, currentSong, getDurationSeconds]);
   const updateLoop = useCallback(() => {
     if (Tone.Transport.state === "started") {
       const now = Tone.Transport.seconds;
-      setCurrentTime(now); // Das hier triggert das Re-Render der FallingNotes!
+      setCurrentTime(now);
 
-      // Metronom
       if (!metronomeMuted && metronomeRef.current) {
         const secondsPerBeat = 60 / currentSong.bpm;
         const currentBeat = Math.floor(now / secondsPerBeat);
@@ -131,7 +170,6 @@ export function PianoGame({ initialSong }: PianoGameProps) {
         }
       }
 
-      // End Check
       const lastNoteTime = (currentSong.notes[currentSong.notes.length - 1].time * (60 / currentSong.bpm));
       if (now > lastNoteTime + 4 && !gameFinished) {
         setIsPlaying(false);
@@ -144,7 +182,6 @@ export function PianoGame({ initialSong }: PianoGameProps) {
 
   useEffect(() => {
     if (isPlaying) {
-      // Starte den Loop
       animationFrameRef.current = requestAnimationFrame(updateLoop);
     } else {
       cancelAnimationFrame(animationFrameRef.current);
@@ -152,23 +189,20 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     return () => cancelAnimationFrame(animationFrameRef.current);
   }, [isPlaying, updateLoop]);
 
-  // --- CONTROLS ---
   const startSequence = async () => {
     await Tone.start();
-
     if (isPlaying) {
       Tone.Transport.pause();
       setIsPlaying(false);
       return;
     }
 
-    // Reset alles
     setGameFinished(false);
     setScore(0);
     setCombo(0);
     setHitNotes(new Set());
+    activeHoldsRef.current.clear();
 
-    // Transport komplett resetten
     Tone.Transport.stop();
     Tone.Transport.seconds = 0;
     setCurrentTime(0);
@@ -183,8 +217,6 @@ export function PianoGame({ initialSong }: PianoGameProps) {
       } else {
         clearInterval(timer);
         setCountDown(null);
-
-        // Go!
         Tone.Transport.bpm.value = currentSong.bpm;
         Tone.Transport.start();
         setIsPlaying(true);
@@ -201,6 +233,7 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     setCombo(0);
     setHitNotes(new Set());
     setGameFinished(false);
+    activeHoldsRef.current.clear();
     lastMetronomeBeat.current = -1;
   };
 
@@ -222,7 +255,6 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     }
   };
 
-  // Keyboard Event Handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") e.preventDefault();
@@ -251,7 +283,6 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     };
   }, [isPlaying, gameFinished, countDown, isLoaded, startNote, stopNote]);
 
-  // --- RENDER ---
   if (!isLoaded) return <div className="flex gap-2 text-gray-500 mt-10"><Loader2 className="animate-spin" /> Lade Piano...</div>;
 
   return (
