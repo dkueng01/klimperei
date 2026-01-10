@@ -3,238 +3,327 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import * as Tone from "tone";
 import { cn } from "@/lib/utils";
-import { songAlleMeineEntchen } from "@/lib/songs";
+import { songAlleMeineEntchen, Song } from "@/lib/songs";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Loader2, Music2, RefreshCcw } from "lucide-react";
+import { Loader2, Play, Pause, RotateCcw } from "lucide-react";
+import { Metronome } from "./Metronome";
 
-const KEYS = [
-  { note: "C4", key: "a", type: "white" },
-  { note: "C#4", key: "w", type: "black" },
-  { note: "D4", key: "s", type: "white" },
-  { note: "D#4", key: "e", type: "black" },
-  { note: "E4", key: "d", type: "white" },
-  { note: "F4", key: "f", type: "white" },
-  { note: "F#4", key: "t", type: "black" },
-  { note: "G4", key: "g", type: "white" },
-  { note: "G#4", key: "z", type: "black" },
-  { note: "A4", key: "h", type: "white" },
-  { note: "A#4", key: "u", type: "black" },
-  { note: "B4", key: "j", type: "white" },
-  { note: "C5", key: "k", type: "white" },
+// --- KONFIGURATION & POSITIONS-LOGIK ---
+
+// Wir definieren die logische Position im Raster (0 = erste weiße Taste, 1 = zweite weiße Taste, etc.)
+// Schwarze Tasten sitzen auf ".5" Positionen (zwischen den weißen), teilweise leicht verschoben für Optik.
+const KEY_DEFS = [
+  { note: "C4", type: "white", pos: 0 },
+  { note: "C#4", type: "black", pos: 0.6 }, // Leicht rechts von der Mitte C-D
+  { note: "D4", type: "white", pos: 1 },
+  { note: "D#4", type: "black", pos: 1.6 }, // Leicht rechts von der Mitte D-E
+  { note: "E4", type: "white", pos: 2 },
+  { note: "F4", type: "white", pos: 3 },
+  { note: "F#4", type: "black", pos: 3.5 }, // Mittig F-G
+  { note: "G4", type: "white", pos: 4 },
+  { note: "G#4", type: "black", pos: 4.55 }, // Leicht rechts
+  { note: "A4", type: "white", pos: 5 },
+  { note: "A#4", type: "black", pos: 5.6 }, // Leicht rechts
+  { note: "B4", type: "white", pos: 6 },
+  { note: "C5", type: "white", pos: 7 }, // Letzte weiße Taste
 ];
 
-export function Piano() {
-  const [activeNote, setActiveNote] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+// Mapping für Tastatureingaben
+const KEYMAP: Record<string, string> = {
+  a: "C4", w: "C#4", s: "D4", e: "D#4", d: "E4", f: "F4", t: "F#4",
+  g: "G4", z: "G#4", h: "A4", u: "A#4", j: "B4", k: "C5"
+};
 
-  const [currentSong] = useState(songAlleMeineEntchen);
-  const [currentNoteIndex, setCurrentNoteIndex] = useState(0);
-  const [feedback, setFeedback] = useState<"neutral" | "correct" | "wrong">("neutral");
+const TOTAL_WHITE_KEYS = 8; // C4 bis C5 sind 8 weiße Tasten
+const ANIMATION_LOOKAHEAD_SECONDS = 2.5; // Etwas mehr Zeit geben
+
+export function Piano() {
+  const [activeNotes, setActiveNotes] = useState<Set<string>>(new Set());
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Player State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [countDown, setCountDown] = useState<number | null>(null); // Für den Timer
+
+  const [currentSong] = useState<Song>(songAlleMeineEntchen);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [metronomeMuted, setMetronomeMuted] = useState(false);
 
   const samplerRef = useRef<Tone.Sampler | null>(null);
+  const metronomeRef = useRef<Tone.MembraneSynth | null>(null);
+  const animationFrameRef = useRef<number>(0);
+  const lastMetronomeBeat = useRef<number>(-1);
 
+  // --- AUDIO SETUP ---
   useEffect(() => {
     const sampler = new Tone.Sampler({
-      urls: {
-        A0: "A0.mp3",
-        C1: "C1.mp3",
-        "D#1": "Ds1.mp3",
-        "F#1": "Fs1.mp3",
-        A1: "A1.mp3",
-        C2: "C2.mp3",
-        "D#2": "Ds2.mp3",
-        "F#2": "Fs2.mp3",
-        A2: "A2.mp3",
-        C3: "C3.mp3",
-        "D#3": "Ds3.mp3",
-        "F#3": "Fs3.mp3",
-        A3: "A3.mp3",
-        C4: "C4.mp3",
-        "D#4": "Ds4.mp3",
-        "F#4": "Fs4.mp3",
-        A4: "A4.mp3",
-        C5: "C5.mp3",
-        "D#5": "Ds5.mp3",
-        "F#5": "Fs5.mp3",
-        A5: "A5.mp3",
-        C6: "C6.mp3",
-        "D#6": "Ds6.mp3",
-        "F#6": "Fs6.mp3",
-        A6: "A6.mp3",
-        C7: "C7.mp3",
-        "D#7": "Ds7.mp3",
-        "F#7": "Fs7.mp3",
-        A7: "A7.mp3",
-        C8: "C8.mp3",
-      },
+      urls: { C4: "C4.mp3", A4: "A4.mp3", C5: "C5.mp3" },
       baseUrl: "https://tonejs.github.io/audio/salamander/",
-      onload: () => {
-        setIsLoaded(true);
-      },
+      onload: () => setIsLoaded(true),
     }).toDestination();
-
     samplerRef.current = sampler;
+
+    const metroSynth = new Tone.MembraneSynth({
+      pitchDecay: 0.008,
+      octaves: 2,
+      envelope: { attack: 0.0006, decay: 0.2, sustain: 0 },
+      volume: -15
+    }).toDestination();
+    metronomeRef.current = metroSynth;
 
     return () => {
       sampler.dispose();
+      metroSynth.dispose();
     };
   }, []);
 
-  const playNote = useCallback(
-    (note: string) => {
-      if (!samplerRef.current || !isLoaded) return;
+  // --- GAME LOOP ---
+  const updateLoop = useCallback(() => {
+    if (Tone.Transport.state === "started") {
+      const now = Tone.Transport.seconds;
+      setCurrentTime(now);
 
-      samplerRef.current.triggerAttackRelease(note, "8n");
-      setActiveNote(note);
-      setTimeout(() => setActiveNote(null), 200);
-
-      if (isPlaying) {
-        const targetNote = currentSong.notes[currentNoteIndex];
-
-        if (targetNote && note === targetNote.note) {
-          setFeedback("correct");
-          setCurrentNoteIndex((prev) => Math.min(prev + 1, currentSong.notes.length));
-
-          setTimeout(() => setFeedback("neutral"), 150);
-        } else {
-          setFeedback("wrong");
-          setTimeout(() => setFeedback("neutral"), 150);
+      // Metronom
+      if (!metronomeMuted && metronomeRef.current) {
+        const secondsPerBeat = 60 / currentSong.bpm;
+        const currentBeat = Math.floor(now / secondsPerBeat);
+        if (currentBeat > lastMetronomeBeat.current) {
+          const note = currentBeat % 4 === 0 ? "C4" : "C3";
+          metronomeRef.current.triggerAttackRelease(note, "32n");
+          lastMetronomeBeat.current = currentBeat;
         }
       }
-    },
-    [isLoaded, isPlaying, currentSong, currentNoteIndex]
-  );
+    }
+    animationFrameRef.current = requestAnimationFrame(updateLoop);
+  }, [currentSong.bpm, metronomeMuted]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || !isLoaded) return;
-      const mappedKey = KEYS.find(
-        (k) => k.key.toLowerCase() === event.key.toLowerCase()
-      );
-      if (mappedKey) playNote(mappedKey.note);
-    };
+    if (isPlaying) {
+      animationFrameRef.current = requestAnimationFrame(updateLoop);
+    } else {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    return () => cancelAnimationFrame(animationFrameRef.current);
+  }, [isPlaying, updateLoop]);
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [playNote, isLoaded]);
-
-  const startAudioContext = async () => {
+  // --- START LOGIK MIT TIMER ---
+  const startSequence = async () => {
     await Tone.start();
-    console.log("Audio Context Started");
+
+    if (isPlaying) {
+      // Stoppen
+      Tone.Transport.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    // Starten mit Countdown
+    let count = 3;
+    setCountDown(count);
+
+    const timer = setInterval(() => {
+      count--;
+      if (count > 0) {
+        setCountDown(count);
+      } else {
+        // GO!
+        clearInterval(timer);
+        setCountDown(null);
+
+        // Musik Start
+        Tone.Transport.bpm.value = currentSong.bpm;
+        Tone.Transport.start();
+        setIsPlaying(true);
+      }
+    }, 600); // Etwas schneller als Sekunden für besseren Flow
   };
 
   const resetSong = () => {
-    setCurrentNoteIndex(0);
-    setFeedback("neutral");
+    Tone.Transport.stop();
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setCountDown(null);
+    lastMetronomeBeat.current = -1;
   };
 
-  const progress = (currentNoteIndex / currentSong.notes.length) * 100;
-  const isFinished = currentNoteIndex >= currentSong.notes.length;
+  const playNoteManual = (note: string) => {
+    if (samplerRef.current && isLoaded) {
+      samplerRef.current.triggerAttackRelease(note, "8n");
+      setActiveNotes((prev) => new Set(prev).add(note));
+      setTimeout(() => {
+        setActiveNotes((prev) => {
+          const next = new Set(prev);
+          next.delete(note);
+          return next;
+        });
+      }, 200);
+    }
+  };
 
-  if (!isLoaded) {
-    return (
-      <div className="flex h-64 w-full items-center justify-center gap-2 text-gray-500">
-        <Loader2 className="animate-spin" />
-        <span>Lade Piano Samples...</span>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      const note = KEYMAP[e.key.toLowerCase()];
+      if (note) playNoteManual(note);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isLoaded]);
+
+  // --- POSITIONSHILFE ---
+  // Berechnet die 'left' Position in Prozent basierend auf der Noten-Definition
+  const getLeftPosition = (note: string) => {
+    const def = KEY_DEFS.find(n => n.note === note);
+    if (!def) return 0;
+
+    // Eine weiße Taste ist 1 Einheit breit.
+    // Wir haben TOTAL_WHITE_KEYS Einheiten.
+    // 100% / TOTAL * position
+    const singleKeyWidthPercent = 100 / TOTAL_WHITE_KEYS;
+    return def.pos * singleKeyWidthPercent;
+  };
+
+  const getNoteVerticalPos = (noteTime: number) => {
+    const secondsPerBeat = 60 / currentSong.bpm;
+    const noteTimeSeconds = noteTime * secondsPerBeat;
+    const timeDifference = noteTimeSeconds - currentTime;
+
+    if (timeDifference < -0.5 || timeDifference > ANIMATION_LOOKAHEAD_SECONDS) return null;
+
+    // 0% = Unten (Treffer), 100% = Oben (Start)
+    return (timeDifference / ANIMATION_LOOKAHEAD_SECONDS) * 100;
+  };
+
+  if (!isLoaded) return <div className="flex gap-2 text-gray-500 mt-10"><Loader2 className="animate-spin" /> Lade Piano...</div>;
 
   return (
-    <div
-      className="flex flex-col items-center justify-center w-full max-w-3xl gap-8"
-      onClick={() => startAudioContext()}
-    >
+    <div className="flex flex-col items-center w-full max-w-4xl gap-6 select-none">
 
-      <div className="w-full p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h3 className="text-xl font-bold flex items-center gap-2">
-              <Music2 className="w-5 h-5" />
-              {currentSong.title}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {isPlaying
-                ? "Drücke die angezeigte Taste auf deiner Tastatur."
-                : "Klicke auf 'Lernen Starten'"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {!isPlaying ? (
-              <Button onClick={() => { startAudioContext(); setIsPlaying(true); }}>
-                Lernen Starten
-              </Button>
-            ) : (
-              <Button variant="outline" onClick={resetSong} size="icon">
-                <RefreshCcw className="w-4 h-4" />
-              </Button>
-            )}
+      {/* HEADER */}
+      <div className="flex justify-between items-center w-full p-4 bg-white rounded-xl shadow-sm border z-30 relative">
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={startSequence}
+            disabled={countDown !== null}
+            size="icon"
+            className={isPlaying ? "bg-amber-500" : "bg-green-600"}
+          >
+            {isPlaying ? <Pause /> : <Play />}
+          </Button>
+          <Button variant="outline" size="icon" onClick={resetSong} disabled={countDown !== null}>
+            <RotateCcw />
+          </Button>
+          <div className="text-sm font-mono text-gray-500">
+            {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
           </div>
         </div>
 
-        <Progress value={progress} className="h-2 mb-6" />
+        <h2 className="font-bold text-lg hidden sm:block">{currentSong.title}</h2>
 
-        <div className="flex justify-center items-center h-24 mb-2">
-          {isFinished ? (
-            <div className="text-2xl text-green-600 font-bold animate-bounce">
-              🎉 Lied fertig gespielt!
-            </div>
-          ) : isPlaying ? (
-            <div className={cn(
-              "text-6xl font-black transition-all duration-200 px-8 py-4 rounded-lg",
-              feedback === "neutral" && "text-gray-800 bg-gray-50",
-              feedback === "correct" && "text-green-600 bg-green-100 scale-110",
-              feedback === "wrong" && "text-red-500 bg-red-100 shake"
-            )}>
-              {currentSong.notes[currentNoteIndex].display}
-            </div>
-          ) : (
-            <div className="text-gray-300 text-4xl font-bold select-none">?</div>
-          )}
-        </div>
+        <Metronome
+          bpm={currentSong.bpm}
+          isPlaying={isPlaying}
+          isMuted={metronomeMuted}
+          onToggleMute={() => setMetronomeMuted(!metronomeMuted)}
+        />
       </div>
 
-      <div className="relative flex h-52 select-none shadow-2xl rounded-b-xl overflow-hidden">
-        {KEYS.map((k) => {
-          const isActive = activeNote === k.note;
-          const isTarget = isPlaying && !isFinished && currentSong.notes[currentNoteIndex].note === k.note;
+      <div className="relative w-full">
+        {/* COUNTDOWN OVERLAY */}
+        {countDown !== null && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-sm rounded-xl">
+            <div className="text-9xl font-black text-blue-600 animate-pulse drop-shadow-lg">
+              {countDown}
+            </div>
+          </div>
+        )}
 
-          if (k.type === "white") {
+        {/* --- FALLING NOTES AREA --- */}
+        <div className="relative w-full h-[350px] bg-slate-900 rounded-t-xl overflow-hidden border-x-8 border-t-8 border-slate-800 shadow-inner">
+          <div className="absolute bottom-0 w-full h-1 bg-yellow-400/50 z-10 blur-[2px]" />
+
+          {currentSong.notes.map((noteEvent, idx) => {
+            const bottomPos = getNoteVerticalPos(noteEvent.time);
+            if (bottomPos === null) return null;
+
+            const isHitWindow = bottomPos < 5 && bottomPos > -2;
+            const leftPos = getLeftPosition(noteEvent.note);
+            const widthPercent = (100 / TOTAL_WHITE_KEYS); // Breite einer weißen Taste
+
+            // Schwarze Tasten Balken etwas schmaler machen
+            const isBlack = noteEvent.note.includes("#");
+            const width = isBlack ? widthPercent * 0.6 : widthPercent * 0.9;
+            const offset = isBlack ? (widthPercent - width) / 2 : widthPercent * 0.05;
+
             return (
               <div
-                key={k.note}
-                onMouseDown={() => playNote(k.note)}
+                key={idx}
                 className={cn(
-                  "relative flex items-end justify-center w-16 h-full border border-gray-300 bg-white cursor-pointer transition-colors active:scale-[0.99] z-0 hover:bg-gray-50",
-                  isActive && "bg-blue-300 !scale-[0.98]",
-                  isTarget && !isActive && "bg-yellow-100 animate-pulse"
+                  "absolute rounded-md shadow-lg flex items-center justify-center font-bold text-[10px] text-white transition-colors border-white/20 border",
+                  isHitWindow ? "bg-yellow-400 text-black scale-110" : isBlack ? "bg-purple-500" : "bg-blue-500"
                 )}
+                style={{
+                  bottom: `${bottomPos}%`,
+                  left: `${leftPos + offset}%`,
+                  width: `${width}%`,
+                  height: "30px"
+                }}
               >
-                <span className={cn("mb-4 font-bold text-gray-400", isTarget && "text-yellow-600")}>
-                  {k.key.toUpperCase()}
-                </span>
+                {noteEvent.display}
+              </div>
+            )
+          })}
+        </div>
 
-                <span className="absolute bottom-1 text-[10px] text-gray-300">{k.note}</span>
-              </div>
-            );
-          } else {
-            return (
-              <div
-                key={k.note}
-                onMouseDown={() => playNote(k.note)}
-                className={cn(
-                  "relative w-12 h-32 -mx-6 border border-black bg-gray-900 cursor-pointer z-10 active:scale-[0.95] flex items-end justify-center pb-3 shadow-md rounded-b-md",
-                  isActive && "bg-gray-700",
-                  isTarget && !isActive && "bg-gray-800 border-yellow-500 border-b-4"
-                )}
-              >
-                <span className="text-xs font-bold text-gray-500">{k.key.toUpperCase()}</span>
-              </div>
-            );
-          }
-        })}
+        {/* --- KLAVIATUR (ABSOLUTE POSITIONING) --- */}
+        <div className="relative w-full h-48 bg-gray-100 rounded-b-xl shadow-2xl overflow-hidden border-x-4 border-b-4 border-gray-300">
+          {KEY_DEFS.map((k) => {
+            const isActive = activeNotes.has(k.note);
+            const leftPercent = getLeftPosition(k.note);
+            const widthPercent = 100 / TOTAL_WHITE_KEYS;
+
+            if (k.type === "white") {
+              return (
+                <div
+                  key={k.note}
+                  onMouseDown={() => playNoteManual(k.note)}
+                  className={cn(
+                    "absolute top-0 bottom-0 border-r border-gray-300 bg-white cursor-pointer active:bg-gray-100 rounded-b-md flex items-end justify-center pb-4 transition-transform",
+                    isActive && "bg-yellow-100 scale-y-[0.98] origin-top"
+                  )}
+                  style={{
+                    left: `${leftPercent}%`,
+                    width: `${widthPercent}%`
+                  }}
+                >
+                  <span className="font-bold text-gray-300 text-sm">
+                    {Object.keys(KEYMAP).find(key => KEYMAP[key] === k.note)?.toUpperCase()}
+                  </span>
+                </div>
+              );
+            } else {
+              // Schwarze Tasten
+              return (
+                <div
+                  key={k.note}
+                  onMouseDown={() => playNoteManual(k.note)}
+                  className={cn(
+                    "absolute top-0 h-32 bg-black z-10 cursor-pointer rounded-b-md border-x border-b border-gray-700 shadow-lg active:scale-y-[0.95] origin-top flex items-end justify-center pb-2",
+                    isActive && "bg-gray-800"
+                  )}
+                  style={{
+                    left: `${leftPercent}%`, // Position aus der Definition
+                    width: `${widthPercent * 0.6}%` // Schwarze Tasten sind schmaler (ca. 60% einer weißen)
+                  }}
+                >
+                  <span className="text-[10px] font-bold text-gray-500">
+                    {Object.keys(KEYMAP).find(key => KEYMAP[key] === k.note)?.toUpperCase()}
+                  </span>
+                </div>
+              );
+            }
+          })}
+        </div>
       </div>
     </div>
   );
