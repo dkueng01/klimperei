@@ -1,5 +1,6 @@
 import { getSongById } from "@/lib/songs";
 import { PianoGame } from "@/components/PianoGame";
+import { MidiLoadingWrapper } from "@/components/MidiLoadingWrapper";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -12,12 +13,11 @@ interface PageProps {
 export default async function PlayPage({ params }: PageProps) {
   const { songId } = await params;
 
-  console.log("Lade Song ID:", songId);
+  const hardcodedSong = getSongById(songId);
 
-  const song = getSongById(songId);
+  const isMidiTest = songId === "midi-test";
 
-  if (!song) {
-    console.error("Song nicht gefunden in DB");
+  if (!hardcodedSong && !isMidiTest) {
     return notFound();
   }
 
@@ -31,7 +31,11 @@ export default async function PlayPage({ params }: PageProps) {
         </Link>
       </div>
 
-      <PianoGame initialSong={song} />
+      {hardcodedSong ? (
+        <PianoGame initialSong={hardcodedSong} />
+      ) : (
+        <MidiLoadingWrapper midiUrl="/test.mid" title="Mein MIDI Import" id="midi-test" />
+      )}
     </main>
   );
 }
