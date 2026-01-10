@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import * as Tone from "tone";
 import { songAlleMeineEntchen, Song } from "@/lib/songs";
 import { KEYMAP, HIT_WINDOW_SECONDS } from "@/lib/piano-config";
@@ -11,12 +11,16 @@ import { FallingNotes } from "./piano/FallingNotes";
 import { GameHeader } from "./piano/GameHeader";
 import { CountDownOverlay, EndScreen } from "./piano/GameOverlays";
 
-export function PianoGame() {
+interface PianoGameProps {
+  initialSong: Song;
+}
+
+export function PianoGame({ initialSong }: PianoGameProps) {
   const [activeNotes, setActiveNotes] = useState<Set<string>>(new Set());
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [countDown, setCountDown] = useState<number | null>(null);
-  const [currentSong] = useState<Song>(songAlleMeineEntchen);
+  const [currentSong] = useState<Song>(initialSong);
   const [currentTime, setCurrentTime] = useState(0);
   const [metronomeMuted, setMetronomeMuted] = useState(false);
 
