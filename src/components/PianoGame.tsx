@@ -174,15 +174,57 @@ export function PianoGame({ initialSong }: PianoGameProps) {
     lastMetronomeBeat.current = -1;
   };
 
+  const togglePlayPause = async () => {
+    if (gameFinished) {
+      startSequence();
+      return;
+    }
+
+    if (countDown !== null) return;
+
+    if (isPlaying) {
+      Tone.Transport.pause();
+      setIsPlaying(false);
+    } else {
+      if (Tone.Transport.position !== "0:0:0") {
+        await Tone.start();
+        Tone.Transport.start();
+        setIsPlaying(true);
+      } else {
+        startSequence();
+      }
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+      }
+
       if (e.repeat) return;
+
+      switch (e.code) {
+        case "Space":
+          togglePlayPause();
+          return;
+        case "KeyR":
+          resetGame();
+          return;
+        case "KeyM":
+          setMetronomeMuted((prev) => !prev);
+          return;
+      }
+
       const note = KEYMAP[e.key.toLowerCase()];
-      if (note) playNote(note);
+      if (note) {
+        playNote(note);
+      }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [playNote]);
+  }, [isPlaying, gameFinished, countDown, isLoaded, playNote]);
 
 
   if (!isLoaded) return <div className="flex gap-2 text-gray-500 mt-10"><Loader2 className="animate-spin" /> Lade Piano...</div>;
