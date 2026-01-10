@@ -14,9 +14,11 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
         const leftPercent = getLeftPosition(k.note);
         const widthPercent = 100 / TOTAL_WHITE_KEYS;
 
-        const keyLabel = Object.keys(KEYMAP)
+        const computerKey = Object.keys(KEYMAP)
           .find((key) => KEYMAP[key] === k.note)
           ?.toUpperCase();
+
+        const noteLabel = k.note.replace(/[0-9]/g, "");
 
         if (k.type === "white") {
           return (
@@ -24,12 +26,17 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
               key={k.note}
               onMouseDown={() => onPlayNote(k.note)}
               className={cn(
-                "absolute top-0 bottom-0 border-r border-gray-300 bg-white cursor-pointer active:bg-gray-100 rounded-b-md flex items-end justify-center pb-4 transition-transform",
+                "absolute top-0 bottom-0 border-r border-gray-300 bg-white cursor-pointer active:bg-gray-100 rounded-b-md flex flex-col justify-end items-center pb-2 transition-transform select-none group",
                 isActive && "bg-yellow-100 scale-y-[0.98] origin-top"
               )}
               style={{ left: `${leftPercent}%`, width: `${widthPercent}%` }}
             >
-              <span className="font-bold text-gray-300 text-sm">{keyLabel}</span>
+              <span className={cn(
+                "mb-2 text-xl font-extrabold text-gray-800",
+                isActive && "text-yellow-600"
+              )}>
+                {noteLabel}
+              </span>
             </div>
           );
         } else {
@@ -38,12 +45,14 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
               key={k.note}
               onMouseDown={() => onPlayNote(k.note)}
               className={cn(
-                "absolute top-0 h-32 bg-black z-10 cursor-pointer rounded-b-md border-x border-b border-gray-700 shadow-lg active:scale-y-[0.95] origin-top flex items-end justify-center pb-2",
+                "absolute top-0 h-32 bg-black z-10 cursor-pointer rounded-b-md border-x border-b border-gray-700 shadow-lg active:scale-y-[0.95] origin-top flex flex-col justify-end items-center pb-2 select-none",
                 isActive && "bg-gray-800"
               )}
               style={{ left: `${leftPercent}%`, width: `${widthPercent * 0.6}%` }}
             >
-              <span className="text-[10px] font-bold text-gray-500">{keyLabel}</span>
+              <span className="mb-1 text-sm font-bold text-gray-200">
+                {noteLabel}
+              </span>
             </div>
           );
         }
