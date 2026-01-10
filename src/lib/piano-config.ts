@@ -1,5 +1,6 @@
 export const TOTAL_WHITE_KEYS = 8;
-export const ANIMATION_LOOKAHEAD_SECONDS = 2.5;
+export const ANIMATION_LOOKAHEAD_SECONDS = 5.0;
+
 export const HIT_WINDOW_SECONDS = 0.35;
 
 export const KEY_DEFS = [
