@@ -3,7 +3,7 @@ import { songLibrary } from "@/lib/songs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PlayCircle, Music } from "lucide-react";
+import { PlayCircle, Music, Keyboard } from "lucide-react";
 
 export default function Home() {
   return (
@@ -13,6 +13,15 @@ export default function Home() {
         <div className="text-center space-y-4">
           <h1 className="text-5xl font-extrabold tracking-tight text-gray-900">Klimperei 🎹</h1>
           <p className="text-xl text-gray-500">Wähle einen Song und lerne Klavier spielen.</p>
+        </div>
+
+        <div className="flex justify-center mb-8">
+          <Link href="/sandbox">
+            <Button size="lg" className="text-white shadow-lg scale-105 transition-transform">
+              <Keyboard className="mr-2 h-5 w-5" />
+              Sandbox starten
+            </Button>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
