@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as Tone from "tone";
-import { songAlleMeineEntchen, Song } from "@/lib/songs";
+import { Song } from "@/lib/songs";
 import { KEYMAP, HIT_WINDOW_SECONDS } from "@/lib/piano-config";
 import { Loader2 } from "lucide-react";
 

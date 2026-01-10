@@ -35,7 +35,7 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
                 "mb-2 text-xl font-extrabold text-gray-800",
                 isActive && "text-yellow-600"
               )}>
-                {noteLabel}
+                {computerKey}
               </span>
             </div>
           );
@@ -51,7 +51,7 @@ export function PianoKeyboard({ activeNotes, onPlayNote }: PianoKeyboardProps) {
               style={{ left: `${leftPercent}%`, width: `${widthPercent * 0.6}%` }}
             >
               <span className="mb-1 text-sm font-bold text-gray-200">
-                {noteLabel}
+                {computerKey}
               </span>
             </div>
           );
