@@ -21,7 +21,7 @@ export function FallingNotes({ song, currentTime, hitNotes }: FallingNotesProps)
 
   return (
     <div className="relative w-full h-[400px] bg-slate-900 rounded-t-xl overflow-hidden border-x-8 border-t-8 border-slate-800 shadow-inner group">
-      <div className="absolute bottom-0 w-full h-1 bg-yellow-400/50 z-10 blur-[2px]" />
+      <div className="absolute bottom-0 w-full h-1 bg-yellow-400/80 z-10" />
 
       {song.notes.map((noteEvent, idx) => {
         if (hitNotes.has(idx)) return null;
